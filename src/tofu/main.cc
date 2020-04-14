@@ -82,6 +82,17 @@ void processInput(GLFWwindow* window) {
 
         std::cout << "Zoom: " << camera_ptr->FoV << std::endl;
     }
+    static bool _line_mode = false;
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+        
+        if (!_line_mode) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            _line_mode = true;
+        } else {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            _line_mode = false;
+        }
+    }
 }
 
 int main() {
