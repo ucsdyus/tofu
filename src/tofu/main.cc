@@ -15,12 +15,29 @@ const unsigned int SCR_HEIGHT = 600;
 
 // Model
 model::Tofu* model_ptr = nullptr;
+int SimTimes = 1;  // Simulation times per frame
+glm::vec3 ModelStartMove(0.0f, 0.0f, 0.0f);
+glm::vec3 ModelStartVelocity(0.0f, 0.0f, 0.0f);
+float SimdL = 1.0f;
+int SimW = 1;
+int SimL = 1;
+int SimH = 1;
+// float SimRotateX = 15.0f;
+// float SimRotateY = 5.0f;
+// float SimRotateZ = 5.0f;
+float SimRotateX = 0.0f;
+float SimRotateY = 0.0f;
+float SimRotateZ = 0.0f;
+float SimMu = 1.5f;
+float SimLambda = 2.5f;
+float SlowMotionRatio = 0.1f;
+
 
 // Camera
 ui::Camera* camera_ptr = nullptr;
 ui::Perspective* perspective_ptr = nullptr;
 float CameraMoveSpeed = 5.0f;
-glm::vec3 CameraInitPosition = glm::vec3(0.0f, 10.0f, 25.0f);
+glm::vec3 CameraInitPosition = glm::vec3(0.0f, 0.5f, 5.0f);
 
 // Mouse
 float lastX = SCR_WIDTH / 2.0f;
@@ -88,7 +105,7 @@ void processInput(GLFWwindow* window) {
 
         std::cout << "Zoom: " << camera_ptr->FoV << std::endl;
     }
-    static bool _line_mode = false;
+    static bool _line_mode = true;
     if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
         
         if (!_line_mode) {
@@ -103,9 +120,16 @@ void processInput(GLFWwindow* window) {
 
 int main() {
     // Initialize model
-    std::unique_ptr<model::Tofu> model_obj(new model::Tofu(0.5f, 4, 4, 4));
+    std::unique_ptr<model::Tofu> model_obj(new model::Tofu(SimdL, SimW, SimH, SimL));
     model_ptr = model_obj.get();
-    model_ptr->Initialize(glm::mat3(1.0f), glm::vec3(0.0f, 10.0f, 0.0f));
+    model_ptr->StressMu = SimMu;
+    model_ptr->StressLambda = SimLambda;
+    model_ptr->StartVelocity = ModelStartVelocity;
+    glm::mat4 Rotate = glm::rotate(glm::mat4(1.0f), glm::radians(SimRotateX), glm::vec3(1.0f, 0.0f, 0.0f));
+    Rotate = glm::rotate(Rotate, glm::radians(SimRotateY), glm::vec3(0.0f, 1.0f, 0.0f));
+    Rotate = glm::rotate(Rotate, glm::radians(SimRotateZ), glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::mat3 R(Rotate);
+    model_ptr->Initialize(R, ModelStartMove);
 
     std::cout << "Box Number: " << model_ptr->BoxNum << std::endl;
     std::cout << "Terahedra Number: " << model_ptr->TetrahedraNum << std::endl;
@@ -152,9 +176,9 @@ int main() {
 
     render::ShaderProgram shader_prog("object.vs", "object.fs");
 
-    std::unique_ptr<float[]> holder_obj(new float[model_ptr->SurfaceHolderSize]);
+    // std::unique_ptr<float[]> holder_obj(new float[model_ptr->SurfaceHolderSize]);
     // DEBUG Tetradedra
-    // std::unique_ptr<float[]> holder_obj(new float[model_ptr->TetrahedraHolderSize]);
+    std::unique_ptr<float[]> holder_obj(new float[model_ptr->TetrahedraHolderSize]);
     float* holder = holder_obj.get();
     model_ptr->GetSurface(holder);
     // DEBUG Tetradedra
@@ -177,9 +201,9 @@ int main() {
 
     // push raw data into VBO
     glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-    glBufferData(GL_ARRAY_BUFFER, model_ptr->SurfaceHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
+    // glBufferData(GL_ARRAY_BUFFER, model_ptr->SurfaceHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
     // DEBUG Tetradedra
-    // glBufferData(GL_ARRAY_BUFFER, model_ptr->TetrahedraHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, model_ptr->TetrahedraHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
 
     // setup data attribute
     glBindVertexArray(VAO[0]);
@@ -191,7 +215,7 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     // // render loop
     // // -----------
     while (!glfwWindowShouldClose(window)) {
@@ -205,9 +229,14 @@ int main() {
         processInput(window);
         
         // Simulate
-        model_ptr->GetSurface(holder);
+        float dt = deltaTime / (float) SimTimes * SlowMotionRatio;
+        // std::cout << "dT: " << dt << std::endl;
+        for (int sim_i = 0; sim_i < SimTimes; ++sim_i) {
+            model_ptr->Step(dt);
+        }
+        // model_ptr->GetSurface(holder);
         // DEBUG Tetradedra
-        // model_ptr->GetTetrahedra(holder);
+        model_ptr->GetTetrahedra(holder);
 
         // Render
         // clear buffer
@@ -225,15 +254,22 @@ int main() {
         shader_prog.setVec3("objectColor", glm::vec3(1.0f));
 
         // enable attribute
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
+        // glBufferSubData(GL_ARRAY_BUFFER, 0, model_ptr->SurfaceHolderSize * sizeof(float), holder);
+        // DEBUG Tetradedra
+        glBufferSubData(GL_ARRAY_BUFFER, 0, model_ptr->TetrahedraHolderSize * sizeof(float), holder);
+
         glBindVertexArray(VAO[0]);
         glDrawArrays(GL_TRIANGLES, /*first=*/0, /*count=*/model_ptr->SurfaceHolderSize);
         // DEBUG Tetradedra
         // glDrawArrays(GL_TRIANGLES, /*first=*/0, /*count=*/model_ptr->TetrahedraHolderSize);
+        glBindVertexArray(0);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
         glfwSwapBuffers(window);
         glfwPollEvents();
+        // exit(-1);
     }
     // optional: de-allocate all resources once they've outlived their purpose:
     // ------------------------------------------------------------------------

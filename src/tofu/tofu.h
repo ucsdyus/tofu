@@ -29,6 +29,7 @@ public:
     float StressMu;
     float StressLambda;
     glm::vec3 StartVelocity;
+    glm::vec3 ConstantAcceleration;
 
     explicit Tofu(float unit_length, int W, int L, int H) {
         // Geometry
@@ -49,22 +50,22 @@ public:
         surface = std::unique_ptr<SurfaceType[]>(new SurfaceType[SurfaceNum]);
 
         // Physics
-        PointMass = 1.0f;
+        PointMass = 0.01f;
         StressMu = 1.0f;
         StressLambda = 1.0f;
-        StartVelocity = glm::vec3(0.0f, -1.0f, 0.0f);
+        StartVelocity = glm::vec3(0.0f, 0.0f, 0.0f);
+        ConstantAcceleration = glm::vec3(0.0f, -9.8f, 0.0f);
 
         velocity = std::unique_ptr<glm::vec3[]>(new glm::vec3[PointNum * 2]);
-        accelaration = std::unique_ptr<glm::vec3[]>(new glm::vec3[PointNum]);
+        acceleration = std::unique_ptr<glm::vec3[]>(new glm::vec3[PointNum]);
         
-        invR = std::unique_ptr<glm::mat3[]>(new glm::mat3[TetrahedraNum * 4]); // R^-1 rest state
+        inv_R = std::unique_ptr<glm::mat3[]>(new glm::mat3[TetrahedraNum * 4]); // R^-1 rest state
+        norm_star = std::unique_ptr<glm::vec3[]>(new glm::vec3[TetrahedraNum * 4]); // norm^* rest state
     }
 
     virtual ~Tofu() {}
     
     void Initialize(glm::mat3 rotate, glm::vec3 move) {
-        p_in = 1;
-        p_out = 0;
         int stride_i = (jNum + 1) * (kNum + 1);
         int stride_j = kNum + 1;
         // Initialize Position
@@ -116,13 +117,30 @@ public:
         // std::cout << "Link Tetrahedra Number: " << tetrahedra_end << std::endl;
 
         // Pre-compute physical params
-        // For tetrahetra
-        //     Compute inv_R
-        // End For tetrahetra
+        for (int i = 0; i < TetrahedraNum; ++i) {
+            TetrahedraType& th = tetrahedra[i];
+            // m4
+            inv_R[i * 4] = glm::inverse(GetFrame(th.m1, th.m2, th.m3, th.m4));
+            norm_star[i * 4] = GetNormStar(th.m1, th.m2, th.m3);
+            // m3
+            inv_R[i * 4 + 1] = glm::inverse(GetFrame(th.m1, th.m4, th.m2, th.m3));
+            norm_star[i * 4 + 1] = GetNormStar(th.m1, th.m4, th.m2);
+
+            // m2
+            inv_R[i * 4 + 2] = glm::inverse(GetFrame(th.m1, th.m3, th.m4, th.m2));
+            norm_star[i * 4 + 2] = GetNormStar(th.m1, th.m3, th.m4);
+
+            // m1
+            inv_R[i * 4 + 3] = glm::inverse(GetFrame(th.m2, th.m4, th.m3, th.m1));
+            norm_star[i * 4 + 3] = GetNormStar(th.m2, th.m4, th.m3);
+        }
 
         // Translate & Set start velocity
+        p_in = 1;
+        p_out = 0;
         for (int pi = 0; pi < PointNum; ++pi) {
             points[pi] = rotate * points[pi] + move;
+
             velocity[pi] = StartVelocity;
             velocity[PointNum + pi] = glm::vec3(0.0f);
         }
@@ -132,7 +150,7 @@ public:
     // Offset = 1 x face = 18
     void GetSurface(float* holder) {
         for (int t = 0; t < SurfaceNum; ++t) {
-            SurfaceType sf = surface[t];
+            SurfaceType& sf = surface[t];
             // std::cout << "Get Surface id = " << t << " Done" << std::endl;
             PutFace(points[sf.m1], points[sf.m2], points[sf.m3], holder + t * 18);
         }
@@ -142,7 +160,7 @@ public:
     // Offset 4 * face = 4 * 18 = 72
     void GetTetrahedra(float* holder) {
         for (int t = 0; t < TetrahedraNum; ++t) {
-            TetrahedraType th = tetrahedra[t];
+            TetrahedraType& th = tetrahedra[t];
             float* cur_holder = holder + t * 72;
 
             // 1
@@ -165,15 +183,29 @@ public:
 
     // Simulation
     void Step(float dt) {
-        ClearForce();
+        ClearAcceleration();
         // For Tetrahedra
-            GetStrain();
-            GetStress();
-            //  Get norm star
-            GetForce();
-            // Save Force
-        // End For Tetrahetra
+        for (int i = 0; i < TetrahedraNum; ++i) {
+            TetrahedraType& th = tetrahedra[i];
+            // m4
+            inv_R_frame = inv_R[i * 4];
+            norm_with_area = norm_star[i * 4];
+            SolveTetrahedra(th.m1, th.m2, th.m3, th.m4);
+            // m3
+            inv_R_frame = inv_R[i * 4 + 1];
+            norm_with_area = norm_star[i * 4 + 1];
+            SolveTetrahedra(th.m1, th.m4, th.m2, th.m3);
+            // m2
+            inv_R_frame = inv_R[i * 4 + 2];
+            norm_with_area = norm_star[i * 4 + 2];
+            SolveTetrahedra(th.m1, th.m3, th.m4, th.m2);
+            // m1
+            inv_R_frame = inv_R[i * 4 + 3];
+            norm_with_area = norm_star[i * 4 + 3];
+            SolveTetrahedra(th.m2, th.m4, th.m3, th.m1);
+        }
         UpdateParams(dt);
+        // std::cout << "dt: " << dt << std::endl;
     }
 
 private:
@@ -191,35 +223,95 @@ private:
         tetrahedra[tetrahedra_end++] = {m1, m2, m3, m4};
     }
 
-
     // Physics
     //------------------------------------------------------------------------------------------
-    inline void ClearForce() {
-        // TODO
+    inline glm::mat3 GetFrame(int m1, int m2, int m3, int m4) {
+        return glm::mat3(points[m1] - points[m4], points[m2] - points[m4], points[m3] - points[m4]);
+    }
+
+    inline glm::vec3 GetNormStar(int m1, int m2, int m3) {
+        return 0.5f * glm::cross(points[m2] - points[m1], points[m3] - points[m1]);
+    }
+
+    inline void ClearAcceleration() {
+        for (int i = 0; i < PointNum; ++i) {
+            acceleration[i].x = acceleration[i].y = acceleration[i].z = 0.0f;
+        }
+    }
+
+    inline void SolveTetrahedra(int m1, int m2, int m3, int m4) {
+        T_frame = GetFrame(m1, m2, m3, m4);
+        // LogMat3("inv R", inv_R_frame);
+        // LogMat3("T", T_frame);
+
+        GetStrain();
+        GetStress();
+        GetForce();
+        acceleration[m4] += f_node / PointMass;
     }
 
     inline void GetStrain() {
         F_deform = T_frame * inv_R_frame;
         strain = 0.5f * (glm::transpose(F_deform) * F_deform - glm::mat3(1.0f));
+
+        // LogMat3("defrom grad", F_deform);
+        // LogMat3("strain", strain);
     }
 
     inline void GetStress() {
-        stress = StressMu * strain + StressLambda * Trace(strain) * glm::mat3(1.0f);
+        stress = 2.0f * StressMu * strain + StressLambda * Trace(strain) * glm::mat3(1.0f);
+        // LogMat3("stress", stress);
     }
-    
+
     inline void GetForce() {
-        // Compute Tetrahedra
-        f_node = -F_deform * stress * norm_star;
+        // f_node = -F_deform * stress * norm_with_area;
+        f_node = F_deform * (stress * norm_with_area);
+        // LogVec3("force", f_node);
     }
 
     void UpdateParams(float dt) {
         p_in = 1 - p_in;
         p_out = 1 - p_in;
-        // For Points
-            // Get New Velocity
+        
+        glm::vec3 avg_a(0.0f);
+        std::string hit_str = "Not Hit";
+        for (int i = 0; i < PointNum; ++i) {
+            glm::vec3& v_in = velocity[p_in * PointNum + i];
+            glm::vec3& v_out = velocity[p_out * PointNum + i];
+
+            // std::cout << "Point: " << i << std::endl;
+            // LogVec3("position", points[i]);
+            // LogVec3("acceleration", acceleration[i]);
+
+            v_out = v_in + (acceleration[i] + ConstantAcceleration) * dt;
+            
+            // Simple damping
+            v_out *= 0.999f;
+
             // Update Position
+            points[i] += (v_in + v_out) * dt / 2.0f;
+            
             // Apply Collision to Position & Velocity (Directly Inverse)
-        // End For Points
+            if (points[i].y < 0.0f) {
+                // hit_str = "Hit";
+                points[i].y = 0.0f;
+                v_out.y = 0.0f;
+            }
+
+            // Log
+            avg_a += acceleration[i];
+            
+        }
+        avg_a /= (float) PointNum;
+        
+        // std::cout << hit_str << std::endl;
+        // LogVec3("Avg. acceleration", avg_a);
+        // LogVec3("Avg. ds", avg_ds);
+        if(std::isnan(avg_a.x) || std::isnan(avg_a.y) || std::isnan(avg_a.z)) {
+            std::cout << "...NaN detected in acceleration" << std::endl;
+            std::cout << "...Exit" << std::endl;
+            exit(-1);
+        }
     }
 
     // Utility
@@ -249,6 +341,25 @@ private:
     inline float Trace(const glm::mat3& M) {
         return M[0][0] + M[1][1] + M[2][2];
     }
+
+    template<typename T>
+    inline void Inverse(T& x) {x = -x;}
+    template<typename T, typename ...Args>
+    inline void Inverse(T &x, Args... args) {
+        x = -x;
+        Inverse<Args...>(args...);
+    }
+
+    void LogMat3(const std::string& info, glm::mat3 M) {
+        std::cout << info << ":" << std::endl
+                  << M[0][0] << " " << M[1][0] << " " << M[2][0] << std::endl
+                  << M[0][1] << " " << M[1][1] << " " << M[2][1] << std::endl
+                  << M[0][2] << " " << M[1][2] << " " << M[2][2] << std::endl;
+    }
+
+    void LogVec3(const std::string& info, glm::vec3 v) {
+        std::cout << info << ":  " << v.x << " " << v.y << " " << v.z << std::endl;
+    }
     
     // Geometry
     //------------------------------------------------------------------------------------------
@@ -263,17 +374,19 @@ private:
     //------------------------------------------------------------------------------------------
     int p_in, p_out;  // in/out 2 x dimsion
     std::unique_ptr<glm::vec3[]> velocity;
-    std::unique_ptr<glm::vec3[]> accelaration;
-    std::unique_ptr<glm::mat3[]> invR;  // R^-1 rest state per point of tetrahedra
+    std::unique_ptr<glm::vec3[]> acceleration;
+    std::unique_ptr<glm::mat3[]> inv_R;  // R^-1 rest state per point of tetrahedra
+    std::unique_ptr<glm::vec3[]> norm_star;
     
     // Phycical temp var
-    glm::mat3 T_frame;
     glm::mat3 inv_R_frame;
+    glm::mat3 T_frame;
     glm::mat3 F_deform;
     glm::mat3 strain;
     glm::mat3 stress;
+    glm::vec3 norm_with_area;
     glm::vec3 f_node;
-    glm::vec3 norm_star;
+    
 };
 
 }  // namespace model
