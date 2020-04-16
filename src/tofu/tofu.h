@@ -146,6 +146,33 @@ public:
         }
     }
 
+    // Simulation
+    void Step(float dt) {
+        ClearAcceleration();
+        // For Tetrahedra
+        for (int i = 0; i < TetrahedraNum; ++i) {
+            TetrahedraType& th = tetrahedra[i];
+            // m4
+            inv_R_frame = inv_R[i * 4];
+            norm_with_area = norm_star[i * 4];
+            SolveTetrahedra(th.m1, th.m2, th.m3, th.m4);
+            // m3
+            inv_R_frame = inv_R[i * 4 + 1];
+            norm_with_area = norm_star[i * 4 + 1];
+            SolveTetrahedra(th.m1, th.m4, th.m2, th.m3);
+            // m2
+            inv_R_frame = inv_R[i * 4 + 2];
+            norm_with_area = norm_star[i * 4 + 2];
+            SolveTetrahedra(th.m1, th.m3, th.m4, th.m2);
+            // m1
+            inv_R_frame = inv_R[i * 4 + 3];
+            norm_with_area = norm_star[i * 4 + 3];
+            SolveTetrahedra(th.m2, th.m4, th.m3, th.m1);
+        }
+        UpdateParams(dt);
+        // std::cout << "dt: " << dt << std::endl;
+    }
+    
     // Surface plot
     // Offset = 1 x face = 18
     void GetSurface(float* holder) {
@@ -179,33 +206,6 @@ public:
             PutFace(points[th.m2], points[th.m1], points[th.m4], cur_holder);
             cur_holder += 18;
         }
-    }
-
-    // Simulation
-    void Step(float dt) {
-        ClearAcceleration();
-        // For Tetrahedra
-        for (int i = 0; i < TetrahedraNum; ++i) {
-            TetrahedraType& th = tetrahedra[i];
-            // m4
-            inv_R_frame = inv_R[i * 4];
-            norm_with_area = norm_star[i * 4];
-            SolveTetrahedra(th.m1, th.m2, th.m3, th.m4);
-            // m3
-            inv_R_frame = inv_R[i * 4 + 1];
-            norm_with_area = norm_star[i * 4 + 1];
-            SolveTetrahedra(th.m1, th.m4, th.m2, th.m3);
-            // m2
-            inv_R_frame = inv_R[i * 4 + 2];
-            norm_with_area = norm_star[i * 4 + 2];
-            SolveTetrahedra(th.m1, th.m3, th.m4, th.m2);
-            // m1
-            inv_R_frame = inv_R[i * 4 + 3];
-            norm_with_area = norm_star[i * 4 + 3];
-            SolveTetrahedra(th.m2, th.m4, th.m3, th.m1);
-        }
-        UpdateParams(dt);
-        // std::cout << "dt: " << dt << std::endl;
     }
 
 private:

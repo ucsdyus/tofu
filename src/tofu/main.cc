@@ -15,29 +15,40 @@ const unsigned int SCR_HEIGHT = 600;
 
 // Model
 model::Tofu* model_ptr = nullptr;
-int SimTimes = 1;  // Simulation times per frame
-glm::vec3 ModelStartMove(0.0f, 0.0f, 0.0f);
-glm::vec3 ModelStartVelocity(0.0f, 0.0f, 0.0f);
-float SimdL = 1.0f;
-int SimW = 1;
-int SimL = 1;
-int SimH = 1;
-// float SimRotateX = 15.0f;
-// float SimRotateY = 5.0f;
-// float SimRotateZ = 5.0f;
-float SimRotateX = 0.0f;
-float SimRotateY = 0.0f;
-float SimRotateZ = 0.0f;
-float SimMu = 1.5f;
-float SimLambda = 2.5f;
-float SlowMotionRatio = 0.1f;
+int SimTimes = 5;  // Simulation times per frame
+float SlowMotionRatio = 0.5f;
 
+// rotate x -> y -> z (degree)
+float SimRotateX = 22.5f;
+float SimRotateY = 10.0f;
+float SimRotateZ = 5.0f;
+glm::mat3 ModelStartRotate;
+glm::vec3 ModelStartMove(0.0f, 10.0f, 0.0f);
+glm::vec3 ModelStartVelocity(0.0f, -3.0f, 0.0f);
+// DEBUG
+// glm::vec3 ModelStartMove(0.0f, 0.0f, 0.0f);
+// glm::vec3 ModelStartVelocity(0.0f, 0.0f, 0.0f);
+
+// box size
+float SimdL = 1.0f;
+// i x j x k box
+int SimW = 4;
+int SimL = 8;
+int SimH = 6;
+// DEBUG
+// float SimRotateX = 0.0f;
+// float SimRotateY = 0.0f;
+// float SimRotateZ = 0.0f;
+float SimMu = 4.5f;
+float SimLambda = 3.5f;
 
 // Camera
 ui::Camera* camera_ptr = nullptr;
 ui::Perspective* perspective_ptr = nullptr;
 float CameraMoveSpeed = 5.0f;
-glm::vec3 CameraInitPosition = glm::vec3(0.0f, 0.5f, 5.0f);
+glm::vec3 CameraInitPosition = glm::vec3(0.0f, 15.0f, 30.0f);
+// DEBUG
+// glm::vec3 CameraInitPosition = glm::vec3(0.0f, 0.5f, 5.0f);
 
 // Mouse
 float lastX = SCR_WIDTH / 2.0f;
@@ -116,6 +127,9 @@ void processInput(GLFWwindow* window) {
             _line_mode = false;
         }
     }
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+        model_ptr->Initialize(ModelStartRotate, ModelStartMove);
+    }
 }
 
 int main() {
@@ -127,9 +141,8 @@ int main() {
     model_ptr->StartVelocity = ModelStartVelocity;
     glm::mat4 Rotate = glm::rotate(glm::mat4(1.0f), glm::radians(SimRotateX), glm::vec3(1.0f, 0.0f, 0.0f));
     Rotate = glm::rotate(Rotate, glm::radians(SimRotateY), glm::vec3(0.0f, 1.0f, 0.0f));
-    Rotate = glm::rotate(Rotate, glm::radians(SimRotateZ), glm::vec3(0.0f, 0.0f, 1.0f));
-    glm::mat3 R(Rotate);
-    model_ptr->Initialize(R, ModelStartMove);
+    ModelStartRotate = glm::rotate(Rotate, glm::radians(SimRotateZ), glm::vec3(0.0f, 0.0f, 1.0f));
+    model_ptr->Initialize(ModelStartRotate, ModelStartMove);
 
     std::cout << "Box Number: " << model_ptr->BoxNum << std::endl;
     std::cout << "Terahedra Number: " << model_ptr->TetrahedraNum << std::endl;
@@ -176,9 +189,9 @@ int main() {
 
     render::ShaderProgram shader_prog("object.vs", "object.fs");
 
-    // std::unique_ptr<float[]> holder_obj(new float[model_ptr->SurfaceHolderSize]);
+    std::unique_ptr<float[]> holder_obj(new float[model_ptr->SurfaceHolderSize]);
     // DEBUG Tetradedra
-    std::unique_ptr<float[]> holder_obj(new float[model_ptr->TetrahedraHolderSize]);
+    // std::unique_ptr<float[]> holder_obj(new float[model_ptr->TetrahedraHolderSize]);
     float* holder = holder_obj.get();
     model_ptr->GetSurface(holder);
     // DEBUG Tetradedra
@@ -201,9 +214,9 @@ int main() {
 
     // push raw data into VBO
     glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-    // glBufferData(GL_ARRAY_BUFFER, model_ptr->SurfaceHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, model_ptr->SurfaceHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
     // DEBUG Tetradedra
-    glBufferData(GL_ARRAY_BUFFER, model_ptr->TetrahedraHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
+    // glBufferData(GL_ARRAY_BUFFER, model_ptr->TetrahedraHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
 
     // setup data attribute
     glBindVertexArray(VAO[0]);
@@ -234,9 +247,9 @@ int main() {
         for (int sim_i = 0; sim_i < SimTimes; ++sim_i) {
             model_ptr->Step(dt);
         }
-        // model_ptr->GetSurface(holder);
+        model_ptr->GetSurface(holder);
         // DEBUG Tetradedra
-        model_ptr->GetTetrahedra(holder);
+        // model_ptr->GetTetrahedra(holder);
 
         // Render
         // clear buffer
@@ -255,9 +268,9 @@ int main() {
 
         // enable attribute
         glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-        // glBufferSubData(GL_ARRAY_BUFFER, 0, model_ptr->SurfaceHolderSize * sizeof(float), holder);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, model_ptr->SurfaceHolderSize * sizeof(float), holder);
         // DEBUG Tetradedra
-        glBufferSubData(GL_ARRAY_BUFFER, 0, model_ptr->TetrahedraHolderSize * sizeof(float), holder);
+        // glBufferSubData(GL_ARRAY_BUFFER, 0, model_ptr->TetrahedraHolderSize * sizeof(float), holder);
 
         glBindVertexArray(VAO[0]);
         glDrawArrays(GL_TRIANGLES, /*first=*/0, /*count=*/model_ptr->SurfaceHolderSize);
