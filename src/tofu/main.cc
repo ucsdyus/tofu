@@ -6,15 +6,21 @@
 #include <memory>
 #include "ui.h"
 #include "shader.h"
+#include "tofu.h"
 
 
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
 
+// Model
+model::Tofu* model_ptr = nullptr;
+
 // Camera
 ui::Camera* camera_ptr = nullptr;
 ui::Perspective* perspective_ptr = nullptr;
+float CameraMoveSpeed = 5.0f;
+glm::vec3 CameraInitPosition = glm::vec3(0.0f, 10.0f, 25.0f);
 
 // Mouse
 float lastX = SCR_WIDTH / 2.0f;
@@ -96,6 +102,16 @@ void processInput(GLFWwindow* window) {
 }
 
 int main() {
+    // Initialize model
+    std::unique_ptr<model::Tofu> model_obj(new model::Tofu(0.5f, 4, 4, 4));
+    model_ptr = model_obj.get();
+    model_ptr->Initialize(glm::mat3(1.0f), glm::vec3(0.0f, 10.0f, 0.0f));
+
+    std::cout << "Box Number: " << model_ptr->BoxNum << std::endl;
+    std::cout << "Terahedra Number: " << model_ptr->TetrahedraNum << std::endl;
+    std::cout << "Surface Number: " << model_ptr->SurfaceNum << std::endl;
+    std::cout << "Point Number: " << model_ptr->PointNum << std::endl;
+
     // glfw: initialize and configure
     // ------------------------------
     glfwInit();
@@ -128,57 +144,30 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
-    ui::Camera camera_obj(glm::vec3(0.0f, 0.0f, 3.0f));
+    ui::Camera camera_obj(CameraInitPosition);
     camera_ptr = &camera_obj;
+    camera_ptr->MoveSpeed = CameraMoveSpeed;
     ui::Perspective perp_obj((float) SCR_WIDTH, (float) SCR_HEIGHT, camera_ptr);
     perspective_ptr = &perp_obj;
 
     render::ShaderProgram shader_prog("object.vs", "object.fs");
 
-    // position, normal
-    float vertices[] = {
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-
-        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-
-        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
-        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
-        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
-        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
-        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
-        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
-
-         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
-         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
-         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
-         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
-         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
-         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
-
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
-         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
-         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
-         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
-        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
-
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f
-    };
+    std::unique_ptr<float[]> holder_obj(new float[model_ptr->SurfaceHolderSize]);
+    // DEBUG Tetradedra
+    // std::unique_ptr<float[]> holder_obj(new float[model_ptr->TetrahedraHolderSize]);
+    float* holder = holder_obj.get();
+    model_ptr->GetSurface(holder);
+    // DEBUG Tetradedra
+    // model_ptr->GetTetrahedra(holder);
+    // for (int i = 0; i < model_ptr->SurfaceNum * 18; i += 6) {
+    //     std::cout << holder[i] << " "
+    //     << holder[i + 1] << " "
+    //     << holder[i + 2] << " "
+    //     << "," << " "
+    //     << holder[i + 3] << " "
+    //     << holder[i + 4] << " "
+    //     << holder[i + 5] << std::endl;
+    // }
 
     unsigned int VBO[1];
     unsigned int VAO[1];
@@ -188,7 +177,9 @@ int main() {
 
     // push raw data into VBO
     glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, model_ptr->SurfaceHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
+    // DEBUG Tetradedra
+    // glBufferData(GL_ARRAY_BUFFER, model_ptr->TetrahedraHolderSize * sizeof(float), holder, GL_DYNAMIC_DRAW);
 
     // setup data attribute
     glBindVertexArray(VAO[0]);
@@ -212,6 +203,11 @@ int main() {
 
         // Input
         processInput(window);
+        
+        // Simulate
+        model_ptr->GetSurface(holder);
+        // DEBUG Tetradedra
+        // model_ptr->GetTetrahedra(holder);
 
         // Render
         // clear buffer
@@ -230,7 +226,9 @@ int main() {
 
         // enable attribute
         glBindVertexArray(VAO[0]);
-        glDrawArrays(GL_TRIANGLES, /*first=*/0, /*count=*/36);
+        glDrawArrays(GL_TRIANGLES, /*first=*/0, /*count=*/model_ptr->SurfaceHolderSize);
+        // DEBUG Tetradedra
+        // glDrawArrays(GL_TRIANGLES, /*first=*/0, /*count=*/model_ptr->TetrahedraHolderSize);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
