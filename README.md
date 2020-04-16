@@ -16,6 +16,7 @@ cmake ..
 ```
 MSBuild.exe .\tofu.sln -property:Configuration=Release
 ```
+4. Run: `bin/Release/tofu.exe`
 
 ## Issues
 1. Only small deformation allowed
