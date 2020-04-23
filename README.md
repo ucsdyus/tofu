@@ -16,6 +16,11 @@ cmake ..
 ```
 MSBuild.exe .\tofu.sln -property:Configuration=Release
 ```
+or
+```
+cmake --build . --config Release
+```
+
 4. Run: `bin/Release/tofu.exe`
 
 ## Issues
